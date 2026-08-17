@@ -47,7 +47,8 @@ _PREPARE_BOOL_FLAGS: list[tuple[str, str, str]] = [
 # at collect: it reaches the manifest via prepare, and collect's --t-final falls back to the manifest
 # value, keeping a single source of truth for the time window.
 _COLLECT_OPTIONAL_FLAGS: list[tuple[str, str]] = [
-    ("average_window", "--average-window"),
+    ("average_window",  "--average-window"),
+    ("average_reducer", "--average-reducer"),
 ]
 
 _COLLECT_BOOL_FLAGS: list[tuple[str, str, str]] = [

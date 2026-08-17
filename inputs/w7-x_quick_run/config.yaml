@@ -2,19 +2,19 @@
 # CLI overrides `snakemake --config key=value` beat any value here.
 
 # Independent of the input_dir/output_dir folder name; describes the physics case.
-run_name: HSX_vacuum_ns201_quickrun
+run_name: w7x_t3d_reconstruction
 
 # Container runtime GPU pool. One of:
 # null: run every stage on CPU images with no GPU access.
 # "all": run GPU images, pinning each concurrent job to one free GPU of the execution host
 # ids e.g. "4,5,6,7": run GPU images with each concurrent job pinned to one free id from the pool.
-gpu_ids: null
+gpu_ids: "all"
 # Concurrent jobs allowed per GPU.
 jobs_per_gpu: 1
 
 
-input_dir: inputs/quick_run
-output_dir: outputs/quick_run
+input_dir: inputs/w7-x_quick_run
+output_dir: outputs/w7-x_quick_run
 
 # Input basenames (under input_dir); output basenames (under output_dir/stageN_<name>/).
 filenames:
@@ -59,10 +59,9 @@ stage3:
     profiles_source: analytical
     neopax_result: null
 
-    # Surface selection
-    # Number of rho points for the analytical profile source.
-    # A null value uses [geometry].n_radial + 1 from common_input.toml.
-    # Here, n_radial = 5 gives six faces and five nonzero scan surfaces.
+    # --- Surface selection ---
+    # A null value uses [geometry].n_radial + 1 for the analytical profile grid.
+    # This run uses 10 faces and scans the 9 faces outside the magnetic axis.
     # Other profile sources use the grid in their profile data.
     analytical_n_radii: null
     # num_radii: 4            # subsample this many radii inside the rho window
@@ -95,10 +94,9 @@ stage4:
     neopax_result: null
 
     # --- Surface selection ---
-    # Number of rho grid points for profiles_source: analytical; null falls back to the transport
-    # face grid, [geometry].n_radial + 1 in common_input.toml. NEOPAX solves on n_radial cells and
-    # interpolates flux files onto the n_radial + 1 faces that bound them, so that is where this
-    # scan samples. For n_radial = 5 that is 6 faces, scanning the 5 nonzero ones.
+    # A null value uses [geometry].n_radial + 1 for the analytical profile grid.
+    # This run uses 10 faces and scans the 9 faces outside the magnetic axis.
+    # Other profile sources use the grid in their profile data.
     analytical_n_radii: null
     # num_radii: 4            # subsample this many radii inside the rho window
     # rho_min: 0.0            # lower edge of the rho window
@@ -123,24 +121,24 @@ stage4:
     # Overrides [output].resolved_diagnostics in the Stage 4 GKX template. Options include:
     # true: retain every chunk's full kx/ky/z diagnostic spectra in host RAM
     # false: skip them
-    resolved_diagnostics: true
+    resolved_diagnostics: false
 
     # --- Turbulence response (perturbed fluxes) ---
     # response_mode `fd_gradients` adds one perturbed sibling run per listed (channel,
     # species) pair per flux surface, multiplying the Stage 4 job count. `none` (or
     # removing the key) runs baseline fluxes only.
-    response_mode: none
+    response_mode: fd_gradients
     # Species to perturb per channel: comma-separated quoted names drawn from the
-    # runtime species (e, D, T). A name matching no runtime species, including
+    # runtime species (e, ion). A name matching no runtime species, including
     # electrons under an adiabatic electron model, prints a warning at prepare time
     # and generates no perturbed runs for that name, so only the unperturbed base
     # runs execute for it.
     # perturb_density_species: "D"       # density-gradient channel
-    # perturb_temperature_species: "D"   # temperature-gradient channel
+    perturb_temperature_species: "ion"   # temperature-gradient channel
     # Perturbation parameters default to 0.5 under fd_gradients mode when left unset.
-    # dkap_density: 0.5
-    # dkap_temperature: 0.5
-    # perturb_rel_step: 0.5
+    dkap_density: 0.5
+    dkap_temperature: 0.5
+    perturb_rel_step: 0.5
 
     # --- Toggles ---
     plot: true
@@ -149,11 +147,8 @@ stage4:
 
   # Rewrite the collected flux file's `r` grid onto the minor-radius convention Stage 5 builds its
   # own radial grid on. Stage 4 writes `r = Aminor_p * rho` from VMEC, and NEOPAX derives its minor
-  # radius differently, so the two grids disagree by up to ~1%. Where NEOPAX's grid is the wider one
-  # its outermost cell falls off the end of the flux file and interpolates to NaN; a
-  # `[turbulence] lagged_response_mode = "fd"` run needs the two grids equal to 1e-12 either way.
-  # This case is HSX, whose skew leans the other way (-1.04%), so nothing here would crash with the
-  # step off; it would just read the fluxes at radii off by that much.
+  # radius differently, so the two grids disagree by up to ~1%. W7-X skews +0.83%, putting NEOPAX's
+  # outermost cell 2.9e-3 m past the file's last knot, which Stage 5 rejects at model construction.
   # Options include:
   # false: write the grid through unchanged
   # "boozer_volume": sqrt(volume_p / (2 pi^2 R00_boozer)), what NEOPAX builds today

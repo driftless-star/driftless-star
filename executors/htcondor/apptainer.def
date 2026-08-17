@@ -43,10 +43,10 @@ chmod +x /app/entrypoint.sh
 mkdir -p /tmp/.cache /opt/cache/pixi
 
 %environment
+. /app/entrypoint.sh
 export PATH="/app/.pixi/envs/{{ ENVIRONMENT }}/bin:/opt/pixi/bin:${PATH}"
 export XDG_CACHE_HOME="/tmp/.cache"
 export PIXI_CACHE_DIR="/opt/cache/pixi"
-. /app/entrypoint.sh
 
 %test
 #!/usr/bin/env -S bash -e

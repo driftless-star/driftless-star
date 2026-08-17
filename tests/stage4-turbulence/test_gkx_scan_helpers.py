@@ -401,6 +401,31 @@ def test_cmd_prepare_dispatches_prescribed_source(tmp_path: Path) -> None:
     assert manifest["source_er"] == [-0.5, 0.5, 1.5, 2.5, 3.5, 4.5]
 
 
+# --- _t3d_median_estimator ---
+
+# The estimator takes the median of the medians of the trailing windows of widths 1..N-1, matching Trinity3D's
+# GX.median_estimator, so a hand-worked vector pins the whole construction. Reversed, [10, 2, 4, 6, 8] is
+# [8, 6, 4, 2, 10]; the window medians are 8, 7 ((8+6)/2), 6 and 5 ((6+4)/2), whose median is (6+7)/2 = 6.5. Reducing
+# the forward trace instead would give 5.5, and widening the last window to the full trace would give 6.0.
+def test_t3d_median_estimator_matches_hand_computed_trailing_medians() -> None:
+    assert_allclose(scan._t3d_median_estimator(np.array([10.0, 2.0, 4.0, 6.0, 8.0])), 6.5, rtol=1e-12)
+
+
+# Trinity3D does not screen samples for finiteness, so a NaN inside the windows must reach the returned value rather
+# than be filtered away and report a clean flux for a failed run. The oldest sample enters no window because the widths
+# stop at N-1, so a NaN there is invisible upstream and stays invisible here. Reversed, [nan, 2, 4, 6] is
+# [6, 4, 2, nan], whose window medians are 6, 5 and 4, with median 5.
+def test_t3d_median_estimator_propagates_nan_inside_the_windows() -> None:
+    assert np.isnan(scan._t3d_median_estimator(np.array([1.0, np.nan, 3.0, 4.0])))
+    assert_allclose(scan._t3d_median_estimator(np.array([np.nan, 2.0, 4.0, 6.0])), 5.0, rtol=1e-12)
+
+
+# A single-sample trace leaves the trailing-window list empty, where Trinity3D is undefined. That sample is the only
+# available reduction, so a trace carrying a real value must not reduce to NaN.
+def test_t3d_median_estimator_single_sample_returns_that_sample() -> None:
+    assert_allclose(scan._t3d_median_estimator(np.array([2.5])), 2.5, rtol=1e-12)
+
+
 # Runtime profile gradients
 
 # ``tprim`` and ``fprim`` equal the negative face gradient divided by the value at that face.

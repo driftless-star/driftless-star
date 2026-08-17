@@ -167,6 +167,52 @@ def test_load_total_pressure_missing_face_profiles_raises(tmp_path: Path) -> Non
         fit_mod._load_total_pressure(bad, time_index=-1, final_time=False)
 
 
+# `_saved_time_count` reads the length of the strictly increasing prefix of `ts`; the comparison and plotting tools
+# use it to pick the last distinctly timed record of a solution. This pins the prefix rule on the shapes a save
+# buffer can take, including an all-zero axis, a partly filled one, a fully distinct one, NaN fill, and a repeated
+# final value, since neither of the last two compares greater and so both end the prefix.
+@pytest.mark.parametrize(
+    ("ts", "expected"),
+    [
+        ([0.0] * 10, 1),
+        ([0.0, 5.0, 10.0, 15.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 4),
+        (list(np.linspace(0.0, 20.0, 10)), 10),
+        ([3.0, 0.0, 0.0], 1),
+        ([0.0, 1.0, 2.0, np.nan, np.nan], 3),
+        ([0.0, 1.0, 2.0, 2.0, 2.0], 3),
+        ([0.0], 1),
+    ],
+)
+def test_saved_time_count_reads_the_increasing_prefix(ts: list[float], expected: int) -> None:
+    assert fit_mod._saved_time_count(np.asarray(ts)) == expected
+
+
+def test_saved_time_count_rejects_a_non_1d_axis() -> None:
+    with pytest.raises(ValueError, match="'ts' must be a 1-D time axis"):
+        fit_mod._saved_time_count(np.zeros((2, 3)))
+
+
+# A NaN in the selected slice would be polynomial-fitted straight into the equilibrium's AM coefficients and only
+# surface much later inside VMEC, so it is rejected at read time in both datasets that reach the fit. `rho_face` is
+# checked as well because it becomes the abscissa s = rho**2 of that same fit.
+@pytest.mark.parametrize("broken", ["pressure", "rho"])
+def test_non_finite_slice_raises(tmp_path: Path, broken: str) -> None:
+    rho_face = _face_grid()
+    total_face = 1.0 - 0.5 * rho_face**2
+    if broken == "pressure":
+        total_face[2] = np.nan
+        expected = "total pressure holds non-finite values"
+    else:
+        rho_face[3] = np.inf
+        expected = "rho holds non-finite values"
+    f = _write_total_pressure(
+        tmp_path / "nonfinite.h5", rho_face=rho_face, total_face=total_face,
+        total_center=1.0 - 0.5 * _center_grid() ** 2,
+    )
+    with pytest.raises(ValueError, match=expected):
+        fit_mod._load_total_pressure(f, time_index=-1, final_time=True)
+
+
 # VMEC evaluates the fitted power series over the whole of s = rho**2 in [0, 1], so the fit's data must reach
 # rho = 1. NEOPAX's cell centers stop at 1 - 1/(2n), while the faces include rho = 1. Asserts the fitted series
 # reproduces the pedestal at both s = 1 and s = 0 to 1%, at n_radial 5, 10 and 20.

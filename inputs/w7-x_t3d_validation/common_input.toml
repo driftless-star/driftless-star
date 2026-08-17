@@ -1,0 +1,155 @@
+# Shared transport template for the W7-X / Trinity3D benchmark, with initial profiles matched
+# to the Trinity3D W7-X example.
+
+[general]
+mode = "transport"
+
+[geometry]
+vmec_file = "../../outputs/w7-x_t3d_validation/stage1_equilibrium/wout_w7x_t3d_reconstruction.nc"
+boozer_file = "../../outputs/w7-x_t3d_validation/stage2_boozer/boozmn_w7x_t3d_reconstruction.nc"
+n_radial = 8
+# Outer radius the Trinity3D + GX W7-X case solves to.
+rho_edge = 0.7
+
+[neoclassical]
+flux_model = "none"
+entropy_model = "none"
+
+[turbulence]
+flux_model = "fluxes_r_file"
+turbulence_file = "../../outputs/w7-x_t3d_validation/stage4_turbulence/neopax_fluxes.h5"
+lagged_response_mode = "fd"
+
+[classical]
+flux_model = "none"
+
+[energy_grid]
+n_x = 4
+
+[species]
+n_species = 2
+names = ["e", "ion"]
+mass_mp = [0.000544617, 1.0]
+charge_qp = [-1.0, 1.0]
+
+[profiles]
+model = "standard_analytical"
+n0 = [0.35, 0.35]
+n_edge = [0.29, 0.29]
+T0 = [6.7, 1.0]
+T_edge = [0.8, 0.8]
+density_shape_power = [2.0, 2.0]
+density_shape_alpha = [1.0, 1.0]
+temperature_shape_power = [2.0, 2.0]
+temperature_shape_alpha = [2.0, 1.0]
+er_initialization_mode = "analytical"
+er0_scale = 0.0
+er0_peak_rho = 0.8
+
+[boundary.density.left]
+type = "neumann"
+
+[boundary.density.left.gradient]
+default = 0.0
+
+[boundary.density.right]
+type = "dirichlet"
+
+[boundary.density.right.value]
+e = 0.29
+ion = 0.29
+
+[boundary.temperature.left]
+type = "neumann"
+
+[boundary.temperature.left.gradient]
+default = 0.0
+
+[boundary.temperature.right]
+type = "dirichlet"
+
+[boundary.temperature.right.value]
+e = 0.8
+ion = 0.8
+
+[boundary.Er.left]
+type = "dirichlet"
+value = 0.0
+
+[boundary.Er.right]
+type = "dirichlet"
+value = 0.0
+
+[equations]
+toggle_density = [false, false]
+toggle_temperature = [false, true]
+toggle_Er = false
+
+[sources]
+# Collisional electron -> ion energy exchange, the only heat input, matching the Trinity3D + GX W7-X case.
+# The frozen 6.7 keV electron profile heats the 1.0 keV ions; ITG turbulence limits the resulting gradient.
+temperature = ["power_exchange_temperature_equilibration"]
+density = []
+
+
+[sources.parameters.power_exchange_temperature_equilibration]
+# The Coulomb logarithm follows the NRL electron-electron, electron-ion, and ion-ion branches,
+# selected per species pair from the charges and evaluated on the state's own 1e20 m^-3 and keV.
+# Species pairs that exchange energy. Options include:
+# "all": every pair
+# "exclude_frozen": only pairs whose temperature [equations].toggle_temperature evolves
+mode = "all"
+# coulomb_log_mode = "ntssfusion"
+
+[transport_solver]
+density_floor = 1.0e-3
+temperature_floor = 1.0e-3
+transport_solver_backend = "radau"
+integrator = "radau"
+radau_rhs_mode = "lagged_response"
+radau_num_stages = 7
+nonlinear_solver_tol = 1.0e-7
+nonlinear_solver_maxiter = 20
+radau_newton_tol_mode = "hairer"
+radau_newton_fnewt_mode = "hairer"
+radau_error_estimator = "embedded2_ntss_transport_scale"
+radau_controller_mode = "hairer_lean_transport_discounted"
+radau_predictor_mode = "collocation_transport_weighted"
+lagged_response_reuse_mode = "global_state_drift"
+lagged_response_reuse_rtol = 1.0e-2
+lagged_response_reuse_atol = 1.0e-8
+t0 = 0.0
+# Trinity3D's t_max = 10 normalised time units, 10 * t_ref = 10 * 0.037405577 s.
+t_final = 0.3740558
+dt = 0.00374056
+rtol = 1.0e-6
+atol = 1.0e-8
+max_step = 1.0
+min_step = 1.0e-14
+max_steps = 20000
+stop_after_accepted_steps = 1
+throw = false
+debug_stage_markers = true
+debug_disable_jit = false
+save_n = 2
+temperature_include_work_term = true
+temperature_include_neo_convection = true
+temperature_include_turbulent_convection = false
+temperature_include_classical_convection = false
+temperature_convection_reconstruction = "closure_face_flux"
+temperature_heat_flux_reconstruction = "closure_face_flux"
+Er_source_mode = "ambipolar_local"
+work_source_mode = "local"
+Er_relax = 0.1
+DEr = 2.0
+Er_permittivity_mode = "ntss_like_midpoint"
+
+[transport_output]
+transport_plot = true
+transport_write_hdf5 = true
+transport_compare_ambipolarity_residual = false
+transport_scan_ambipolarity_residual = false
+transport_overlay_reference_er = false
+transport_output_dir = "../../outputs/w7-x_t3d_validation/stage5_transport/"
+transport_plot_n_times = 2
+

@@ -217,3 +217,5 @@ outputs/
 # per-run input folders. The committed quick_run baseline ships so a fresh clone is runnable.
 inputs/*/
 !inputs/quick_run/
+!inputs/w7-x_quick_run/
+!inputs/w7-x_t3d_validation/

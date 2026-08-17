@@ -68,6 +68,7 @@ _PREPARE_OPTIONALS: list[tuple[str, str, object]] = [
 _FULL_CFG: dict = {key: value for key, _, value in _PREPARE_OPTIONALS} | {
     "resolved_diagnostics": False,
     "average_window": 1.0,
+    "average_reducer": "t3d_median",
     "gpu_ids": "0,1",
     "plot": False,
     "plot_run_heat_traces": True,
@@ -180,6 +181,16 @@ def test_collect_average_window_emitted_exactly_once() -> None:
     assert "--average-window" not in compose(collect_cmd, stage_cfg={})
 
 
+# The reducer picks which estimator folds each time trace into one number, so leaving it unemitted silently pins every
+# run to window_mean and makes t3d_median unreachable from a config. Absent must stay absent, since the stage script's
+# own default is what an omitted key is meant to select.
+def test_collect_average_reducer_emitted_exactly_once() -> None:
+    out = compose(collect_cmd, stage_cfg={"average_reducer": "t3d_median"})
+    assert "--average-reducer t3d_median" in out
+    assert out.split().count("--average-reducer") == 1
+    assert "--average-reducer" not in compose(collect_cmd, stage_cfg={})
+
+
 # Plot toggles live on `collect` and are tri-state: True emits the on-flag, False the off-flag, absent emits neither.
 # Token membership so a short flag like --plot is not falsely found inside --no-plot or --plot-run-heat-traces.
 @pytest.mark.parametrize(
@@ -247,6 +258,7 @@ def test_collect_flags_parse_and_dispatch_to_cmd_collect() -> None:
     assert args.neopax_flux_out == "outputs/quick_run/stage4_turbulence/neopax_fluxes.h5"
     assert args.t_final is None
     assert args.plot is False
+    assert args.average_reducer == "t3d_median"
 
 
 # The time window has a single source of truth: config t_max reaches the manifest via prepare, and collect's --t-final

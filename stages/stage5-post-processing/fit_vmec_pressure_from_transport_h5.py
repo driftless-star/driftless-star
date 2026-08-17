@@ -16,6 +16,9 @@ Modes
 - ``write-input``:
   update the ``AM`` / ``PRES_SCALE`` / ``PMASS_TYPE`` assignments inside the
   ``&INDATA`` block of a VMEC ``input.*`` file
+
+The comparison and plotting siblings also import :func:`_saved_time_count` from here to pick
+the last distinctly timed record of a transport solution.
 """
 
 from __future__ import annotations
@@ -58,6 +61,39 @@ def _resolve_time_index(n_times: int, *, time_index: int, final_time: bool) -> i
     if idx < 0 or idx >= n_times:
         raise IndexError(f"time index {time_index} out of range for n_times={n_times}")
     return idx
+
+
+def _saved_time_count(ts: np.ndarray) -> int:
+    """Count the leading strictly increasing prefix of a solution's time axis.
+
+    The comparison and plotting siblings use this to pick the last distinctly timed record of a
+    transport solution. Repeated values, ``NaN`` fill and preallocated zeros all fail to compare
+    greater than their predecessor, so any of them ends the prefix. A completed solve may repeat
+    timestamps when several save slots land on one accepted step, so the prefix length is a
+    record-selection aid, not a health verdict.
+
+    Parameters
+    ----------
+    ts : numpy.ndarray
+        The file's ``ts`` time axis in seconds, shape ``(n_time,)``.
+
+    Returns
+    -------
+    int
+        Length of the strictly increasing prefix. The first slot always counts.
+
+    Raises
+    ------
+    ValueError
+        If ``ts`` is not a 1-D time axis.
+    """
+    ts = np.asarray(ts, dtype=float)
+    if ts.ndim != 1:
+        raise ValueError(f"'ts' must be a 1-D time axis, got shape {ts.shape}")
+    increasing = np.diff(ts) > 0.0
+    if bool(np.all(increasing)):
+        return int(ts.size)
+    return int(np.argmin(increasing)) + 1
 
 
 def _load_total_pressure(h5_path: Path, *, time_index: int, final_time: bool) -> tuple[np.ndarray, np.ndarray, int | None]:
@@ -137,7 +173,47 @@ def _load_total_pressure(h5_path: Path, *, time_index: int, final_time: bool) ->
         raise ValueError(
             f"Pressure/rho_face shape mismatch: total_pressure.shape={total_pressure.shape}, rho_face.shape={rho.shape}"
         )
+    # A NaN here would be polynomial-fitted straight into the equilibrium's AM coefficients and only
+    # fail much later inside VMEC, so it is rejected at read time.
+    for name, arr in (("rho", rho), ("total pressure", total_pressure)):
+        if not np.all(np.isfinite(arr)):
+            raise ValueError(f"{h5_path} {name} holds non-finite values in the selected time slice")
     return rho, total_pressure, resolved_index
+
+
+def _load_ion_temperature(h5_path: Path, *, time_index: int, final_time: bool) -> tuple[np.ndarray, int | None]:
+    with h5py.File(h5_path, "r") as f:
+        keys = set(f.keys())
+        if "temperature" not in keys:
+            raise KeyError(f"{h5_path} is missing required dataset 'temperature'")
+        temperature_all = np.asarray(f["temperature"][()])
+        resolved_index: int | None = None
+        if temperature_all.ndim >= 3:
+            resolved_index = _resolve_time_index(
+                temperature_all.shape[0],
+                time_index=int(time_index),
+                final_time=final_time,
+            )
+            temperature = np.asarray(temperature_all[resolved_index], dtype=float)
+        else:
+            temperature = _load_dataset_at_time(temperature_all, time_index)
+        if temperature.ndim != 2:
+            raise ValueError(f"Expected species-resolved temperature with shape (species, rho), got {temperature.shape}")
+        species_names = None
+        if "species_names" in keys:
+            species_names = [
+                bytes(name).decode("utf-8") if isinstance(name, bytes) else str(name)
+                for name in np.asarray(f["species_names"][()]).reshape(-1)
+            ]
+    ion_index = 0
+    if species_names:
+        ion_index = next(
+            (i for i, name in enumerate(species_names) if name.strip().lower() not in {"e", "electron"}),
+            0,
+        )
+    elif temperature.shape[0] > 1:
+        ion_index = 1
+    return np.asarray(temperature[ion_index], dtype=float), resolved_index
 
 
 def _fit_power_series(s: np.ndarray, p: np.ndarray, degree: int) -> np.ndarray:

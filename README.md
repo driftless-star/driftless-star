@@ -115,7 +115,7 @@ Snakemake DAG, end-to-end tests, and publishing. Details in the [Guide](docs/gui
 
 ## Usage
 
-A *run* is a folder under `inputs/` holding its run config (`config.yaml`) and every stage input. A fresh clone ships one ready-to-run example, `inputs/quick_run/`. `common_input.toml` in the run folder is the shared transport config read by Stages 3, 4, and 5.
+A *run* is a folder under `inputs/` that holds its run config (`config.yaml`) and stage inputs. A fresh clone ships one ready-to-run example, `inputs/quick_run/`. Two W7-X configurations are committed beside it: `inputs/w7-x_quick_run/` for a smoke run and `inputs/w7-x_t3d_validation/` for the Trinity3D validation resolution. Their Stage 3 SFINCS namelist, `sfincs_input.w7x_t3d_reconstruction`, remains local. Add that file to the selected run directory before you start a W7-X run. `common_input.toml` in the run folder is the shared transport config read by Stages 3, 4, and 5.
 
 `driftless-star` iterates toward transport-consistent profiles by chaining forward passes. Each pass's Stage 5 transport solution feeds the next one three ways: as a boundary refit from the evolved pressure, as kinetic profiles prescribed to Stages 3, 4, and 5, and as the advanced transport clock.
 
@@ -123,7 +123,7 @@ A *run* is a folder under `inputs/` holding its run config (`config.yaml`) and e
 pixi run driftless-star --config inputs/quick_run/config.yaml --max-iters 3 --cores 4
 ```
 
-Each iteration is a full pipeline run under its own `outputs/<run>/loop/iter_N/` tree (`outputs/` is gitignored), and the driver stops early once the pressure profile settles under the config's `convergence.method` (`rms` or `pointwise`) and `convergence.pressure_rel_tol`. Stages listed under `loop.rerun` as `false` are frozen, so iterations after the first reuse their iteration 1 artifacts. See [docs/mvp-pipeline.md](docs/mvp-pipeline.md#closing-the-loop).
+Each iteration is a full pipeline run under its own `outputs/<run>/loop/iter_N/` tree (`outputs/` is gitignored). Stage 5 writes `output/stage5_post_processing/converge_status.json`, and the driver stops early once the pressure profile settles under the config's `convergence.method` (`rms` or `pointwise`) and `convergence.pressure_rel_tol`. It starts another iteration only for `continue`, stops for `converged`, `horizon`, or `halted`, and also stops at `--max-iters`. Stages listed under `loop.rerun` as `false` are frozen, so iterations after the first reuse their iteration 1 artifacts. See [docs/mvp-pipeline.md](docs/mvp-pipeline.md#closing-the-loop).
 
 ### Run a single forward pass
 
@@ -163,6 +163,18 @@ pixi run driftless-star --config inputs/quick_run/config.yaml --cores 8 --gpu-id
 ```
 
 GPU mode needs an NVIDIA host with `nvidia-container-toolkit` configured on the docker daemon. See [docs/mvp-pipeline.md](docs/mvp-pipeline.md#multi-gpu-scheduling) for how the pinning works, how to share a host with other users, and the current limitations.
+
+### Recreate the Trinity3D + GX validation
+
+`inputs/w7-x_t3d_validation/` reconstructs the W7-X ion-temperature clamping case that Trinity3D runs with GX as its turbulent flux model. Frozen 6.7 keV electrons heat the evolving 1 keV ions through collisional exchange while ITG turbulence limits the resulting gradient. The transport grid has eight cells bounded by nine faces out to rho = 0.7. Stages 3 and 4 omit the magnetic axis and scan the eight non-axis faces. Iteration 1 builds every stage input from the analytical `[profiles]` parameters. Later iterations prescribe their profiles from the previous transport solution.
+
+Before you launch, add `inputs/w7-x_t3d_validation/sfincs_input.w7x_t3d_reconstruction`. Pull the Stage 4 and 5 GPU images. Adjust `gpu_ids` and `jobs_per_gpu` for your host as described above. Then run the loop:
+
+```
+pixi run driftless-star --config inputs/w7-x_t3d_validation/config.yaml --max-iters 10 --cores 16
+```
+
+Each iteration lands under `outputs/w7-x_t3d_validation/loop/iter_N/`. Its status signal is `output/stage5_post_processing/converge_status.json`. The last completed iteration's `output/stage5_transport/transport_solution.h5` contains the clamped ion temperature profile for comparison with Trinity3D's `test-w7x-gx` case.
 
 ### Visualize the pipeline graph
 
