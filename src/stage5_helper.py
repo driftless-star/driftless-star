@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .utils import apply_assignments
 
-PRESSURE_CONVERGENCE_METHODS = ("rms", "pointwise")
+PRESSURE_CONVERGENCE_METHODS = ("rms", "pointwise", "t_final")
 
 
 def resolve_pressure_convergence_method(config: dict) -> str:
@@ -22,8 +22,8 @@ def resolve_pressure_convergence_method(config: dict) -> str:
     Parameters
     ----------
     config : dict
-        Parsed run config. ``convergence.method`` may be ``"rms"`` or
-        ``"pointwise"``.
+        Parsed run config. ``convergence.method`` may be ``"rms"``, ``"pointwise"`` or
+        ``"t_final"``.
 
     Returns
     -------

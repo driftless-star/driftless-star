@@ -47,7 +47,7 @@ def _write(path: Path, pressure: np.ndarray, pressure_face: np.ndarray, n_rho: i
 )
 def test_pressure_converged_false_for_static_profile(tmp_path: Path, criterion) -> None:
     f = _write(tmp_path / "static.h5", _static(2.0), _static(2.0, n_rho=6))
-    assert not criterion(f, rel_tol=1e-2)
+    assert not criterion(f, rel_tol=1e-2, common_config=_clock_template(tmp_path))
 
 
 @pytest.mark.parametrize(
@@ -59,7 +59,7 @@ def test_pressure_converged_true_for_small_change(tmp_path: Path, criterion) -> 
     slice0 = _static(2.0, n_rho=6)
     pressure_3d = np.stack([slice0, slice0 * 1.0001])  # 0.01% change between slices
     f = _write(tmp_path / "small.h5", np.stack([_static(2.0)] * 2), pressure_3d)
-    assert criterion(f, rel_tol=1e-2)
+    assert criterion(f, rel_tol=1e-2, common_config=_clock_template(tmp_path))
 
 
 @pytest.mark.parametrize(
@@ -71,7 +71,7 @@ def test_pressure_converged_false_for_large_change(tmp_path: Path, criterion) ->
     slice0 = _static(2.0, n_rho=6)
     pressure_3d = np.stack([slice0, slice0 * 2.0])  # 100% change between slices
     f = _write(tmp_path / "large.h5", np.stack([_static(2.0)] * 2), pressure_3d)
-    assert not criterion(f, rel_tol=1e-2)
+    assert not criterion(f, rel_tol=1e-2, common_config=_clock_template(tmp_path))
 
 
 # A 2% change at one of six faces has an RMS of 0.02/sqrt(6), below the 1%
@@ -82,8 +82,9 @@ def test_pressure_convergence_methods_distinguish_a_single_point_change(tmp_path
     slice1[:, 3] *= 1.02
     f = _write(tmp_path / "spike.h5", np.stack([_static(2.0)] * 2), np.stack([slice0, slice1]))
 
-    assert post.rms_pressure_converged(f, rel_tol=1e-2)
-    assert not post.pointwise_pressure_converged(f, rel_tol=1e-2)
+    template = _clock_template(tmp_path)
+    assert post.rms_pressure_converged(f, rel_tol=1e-2, common_config=template)
+    assert not post.pointwise_pressure_converged(f, rel_tol=1e-2, common_config=template)
 
 
 @pytest.mark.parametrize(
@@ -91,6 +92,7 @@ def test_pressure_convergence_methods_distinguish_a_single_point_change(tmp_path
     [
         ("rms", post.rms_pressure_converged),
         ("pointwise", post.pointwise_pressure_converged),
+        ("t_final", post.t_final_converged),
     ],
 )
 def test_resolve_pressure_convergence_returns_registered_function(method: str, criterion) -> None:
@@ -100,7 +102,7 @@ def test_resolve_pressure_convergence_returns_registered_function(method: str, c
 def test_resolve_pressure_convergence_rejects_unknown_method() -> None:
     with pytest.raises(
         ValueError,
-        match=r"Unsupported pressure convergence method 'RMS'; expected one of: rms, pointwise",
+        match=r"Unsupported pressure convergence method 'RMS'; expected one of: rms, pointwise, t_final",
     ):
         post.resolve_pressure_convergence("RMS")
 
@@ -154,6 +156,22 @@ def test_transport_horizon_needs_a_configured_end_time(tmp_path: Path) -> None:
         post.transport_horizon_reached(f, template)
 
 
+# The ``t_final`` criterion reads only the clock. The pressure doubles between the two slices, so
+# a pressure criterion would never report convergence.
+@pytest.mark.parametrize(
+    ("final_time", "converged"), [(1.0, False), (2.0, True), (3.0, True)],
+    ids=["before", "at", "past"],
+)
+def test_t_final_converged_tracks_the_clock(tmp_path: Path, final_time: float, converged: bool) -> None:
+    slice0 = _static(2.0, n_rho=6)
+    pressure_3d = np.stack([slice0, slice0 * 2.0])
+    f = _with_clock(
+        _write(tmp_path / f"t_final-{final_time}.h5", np.stack([_static(2.0)] * 2), pressure_3d),
+        final_time,
+    )
+    assert post.t_final_converged(f, rel_tol=1e-2, common_config=_clock_template(tmp_path)) is converged
+
+
 # Signal construction
 
 # ``build_signal`` returns the status dictionary that the loop reads. Non-positive total pressure
@@ -197,13 +215,54 @@ def test_build_signal_uses_the_selected_pressure_convergence_method(
     ) == {"status": expected_status}
 
 
-def test_main_accepts_the_pointwise_method_from_the_cli(tmp_path: Path, monkeypatch) -> None:
+# Under ``t_final`` only the clock decides. A pass with no transport time left is converged even
+# though its pressure doubled.
+def test_build_signal_t_final_converges_at_the_horizon(tmp_path: Path) -> None:
+    slice0 = _static(2.0, n_rho=6)
+    pressure_3d = np.stack([slice0, slice0 * 2.0])
+    f = _with_clock(_write(tmp_path / "t_final_done.h5", np.stack([_static(2.0)] * 2), pressure_3d), 2.0)
+    assert post.build_signal(
+        f, rel_tol=1e-2, common_config=_clock_template(tmp_path), convergence_method="t_final"
+    ) == {"status": "converged"}
+
+
+# Under ``t_final`` a settled profile with transport time left runs another pass. A change of 0.01%
+# would meet the pointwise criterion.
+def test_build_signal_t_final_continues_before_the_horizon(tmp_path: Path) -> None:
+    slice0 = _static(2.0, n_rho=6)
+    pressure_3d = np.stack([slice0, slice0 * 1.0001])
+    f = _with_clock(_write(tmp_path / "t_final_more.h5", np.stack([_static(2.0)] * 2), pressure_3d), 1.0)
+    assert post.build_signal(
+        f, rel_tol=1e-2, common_config=_clock_template(tmp_path), convergence_method="t_final"
+    ) == {"status": "continue"}
+
+
+# The non-positive pressure check runs before every criterion. Under ``t_final`` a collapsed profile
+# at the horizon still halts.
+def test_build_signal_t_final_still_halts_on_nonpositive_pressure(tmp_path: Path) -> None:
+    pressure_face = _static(2.0, n_rho=6)
+    pressure_face[:, 2] = -1.0
+    f = _with_clock(_write(tmp_path / "t_final_halt.h5", _static(2.0), pressure_face), 2.0)
+    assert post.build_signal(
+        f, rel_tol=1e-2, common_config=_clock_template(tmp_path), convergence_method="t_final"
+    ) == {"status": "halted"}
+
+
+# The CLI must reach every registered criterion. The same unsettled profile continues under
+# ``pointwise`` with time left. It converges under ``t_final`` when the clock reaches 2.0.
+@pytest.mark.parametrize(
+    ("method", "final_time", "expected_status"),
+    [("pointwise", 1.0, "continue"), ("t_final", 2.0, "converged")],
+)
+def test_main_accepts_the_convergence_method_from_the_cli(
+    tmp_path: Path, monkeypatch, method: str, final_time: float, expected_status: str
+) -> None:
     slice0 = _static(2.0, n_rho=6)
     slice1 = slice0.copy()
     slice1[:, 3] *= 1.02
     transport = _with_clock(
-        _write(tmp_path / "cli-spike.h5", np.stack([_static(2.0)] * 2), np.stack([slice0, slice1])),
-        1.0,
+        _write(tmp_path / f"cli-spike-{method}.h5", np.stack([_static(2.0)] * 2), np.stack([slice0, slice1])),
+        final_time,
     )
     common_config = _clock_template(tmp_path)
     signal = tmp_path / "signal.json"
@@ -216,13 +275,13 @@ def test_main_accepts_the_pointwise_method_from_the_cli(tmp_path: Path, monkeypa
             "--common-config", str(common_config),
             "--signal", str(signal),
             "--pressure-rel-tol", "0.01",
-            "--pressure-convergence-method", "pointwise",
+            "--pressure-convergence-method", method,
         ],
     )
 
     post.main()
 
-    assert json.loads(signal.read_text()) == {"status": "continue"}
+    assert json.loads(signal.read_text()) == {"status": expected_status}
 
 
 # This profile is not settled and has no transport time left. Another pass would repeat the same

@@ -29,9 +29,10 @@ filenames:
   s5_output: transport_solution.h5
   s5_signal: converge_status.json
 
-# Pressure convergence criterion. Options:
+# Convergence criterion. Options:
 #   rms:       sqrt(mean(((P_final - P_initial) / P_initial)^2))
 #   pointwise: max(abs((P_final - P_initial) / P_initial))
+#   t_final:   debugging criterion, final_time >= [transport_solver].t_final (pressure_rel_tol unused)
 convergence:
   method: pointwise
   pressure_rel_tol: 1.0e-2

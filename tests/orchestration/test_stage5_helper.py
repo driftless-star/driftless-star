@@ -41,7 +41,7 @@ def test_pressure_convergence_method_defaults_to_pointwise(config: dict) -> None
     assert resolve_pressure_convergence_method(config) == "pointwise"
 
 
-@pytest.mark.parametrize("method", ["rms", "pointwise"])
+@pytest.mark.parametrize("method", ["rms", "pointwise", "t_final"])
 def test_pressure_convergence_method_accepts_supported_values(method: str) -> None:
     assert resolve_pressure_convergence_method({"convergence": {"method": method}}) == method
 
