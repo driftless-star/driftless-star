@@ -166,6 +166,31 @@ def test_load_total_pressure_missing_face_profiles_raises(tmp_path: Path) -> Non
         fit_mod._load_total_pressure(bad, time_index=-1, final_time=False)
 
 
+# `_saved_time_count` reads the length of the strictly increasing prefix of `ts`; the comparison and plotting tools
+# use it to pick the last distinctly timed record of a solution. This pins the prefix rule on the shapes a save
+# buffer can take, including an all-zero axis, a partly filled one, a fully distinct one, NaN fill, and a repeated
+# final value, since neither of the last two compares greater and so both end the prefix.
+@pytest.mark.parametrize(
+    ("ts", "expected"),
+    [
+        ([0.0] * 10, 1),
+        ([0.0, 5.0, 10.0, 15.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 4),
+        (list(np.linspace(0.0, 20.0, 10)), 10),
+        ([3.0, 0.0, 0.0], 1),
+        ([0.0, 1.0, 2.0, np.nan, np.nan], 3),
+        ([0.0, 1.0, 2.0, 2.0, 2.0], 3),
+        ([0.0], 1),
+    ],
+)
+def test_saved_time_count_reads_the_increasing_prefix(ts: list[float], expected: int) -> None:
+    assert fit_mod._saved_time_count(np.asarray(ts)) == expected
+
+
+def test_saved_time_count_rejects_a_non_1d_axis() -> None:
+    with pytest.raises(ValueError, match="'ts' must be a 1-D time axis"):
+        fit_mod._saved_time_count(np.zeros((2, 3)))
+
+
 # A NaN in the selected slice can enter the fitted AM coefficients and cause a later failure in VMEC.
 # The loader rejects a NaN when it reads either dataset. It also checks `rho_face` because the fit uses
 # s = rho**2.

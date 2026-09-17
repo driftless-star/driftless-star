@@ -211,6 +211,24 @@ def _run_collect(tmp_path: Path, runs: list[dict]) -> Path:
     return Path(args.out)
 
 
+def test_collect_defaults_to_window_mean_when_reducer_is_omitted(tmp_path: Path) -> None:
+    run = _collect_run_spec(tmp_path, 0, 1, 0.5)
+    run["runtime_species"] = [{
+        "name": "D", "mass": 2.0,
+        "density_reference_physical": 1.0, "temperature_reference_physical": 1.0,
+    }]
+    diagnostic = Path(f"{run['output_prefix']}.diagnostics.csv")
+    diagnostic.parent.mkdir(parents=True, exist_ok=True)
+    diagnostic.write_text(
+        "t,heat_flux,particle_flux,heat_flux_s0,particle_flux_s0\n"
+        "0,1,2,1,2\n1,3,4,3,4\n2,8,9,8,9\n"
+    )
+    output = _run_collect(tmp_path, [run])
+    with h5py.File(output, "r") as f:
+        assert_allclose(f["heat_flux_total"][...], [4.0])
+        assert_allclose(f["particle_flux_total"][...], [5.0])
+
+
 # flux_summary.h5 holds one row per executed run, so in fd_gradients mode base and perturbed rows sit at duplicate rho
 # values; the file must carry the run identity as datasets so those rows are distinguishable without joining against
 # runs.csv by row order.
@@ -407,6 +425,31 @@ def test_cmd_prepare_dispatches_prescribed_source(tmp_path: Path) -> None:
     # snapshot-derived value proves the prescribed builder ran; the analytical Er is quadratic in rho, never this ramp.
     # It is the Er_face ramp rather than the cell-centered Er, which pins that the face arrays are what got read.
     assert manifest["source_er"] == [-0.5, 0.5, 1.5, 2.5, 3.5, 4.5]
+
+
+# --- _t3d_median_estimator ---
+
+# The estimator takes the median of the medians of the trailing windows of widths 1..N-1, matching Trinity3D's
+# GX.median_estimator, so a hand-worked vector pins the whole construction. Reversed, [10, 2, 4, 6, 8] is
+# [8, 6, 4, 2, 10]; the window medians are 8, 7 ((8+6)/2), 6 and 5 ((6+4)/2), whose median is (6+7)/2 = 6.5. Reducing
+# the forward trace instead would give 5.5, and widening the last window to the full trace would give 6.0.
+def test_t3d_median_estimator_matches_hand_computed_trailing_medians() -> None:
+    assert_allclose(scan._t3d_median_estimator(np.array([10.0, 2.0, 4.0, 6.0, 8.0])), 6.5, rtol=1e-12)
+
+
+# Trinity3D does not screen samples for finiteness, so a NaN inside the windows must reach the returned value rather
+# than be filtered away and report a clean flux for a failed run. The oldest sample enters no window because the widths
+# stop at N-1, so a NaN there is invisible upstream and stays invisible here. Reversed, [nan, 2, 4, 6] is
+# [6, 4, 2, nan], whose window medians are 6, 5 and 4, with median 5.
+def test_t3d_median_estimator_propagates_nan_inside_the_windows() -> None:
+    assert np.isnan(scan._t3d_median_estimator(np.array([1.0, np.nan, 3.0, 4.0])))
+    assert_allclose(scan._t3d_median_estimator(np.array([np.nan, 2.0, 4.0, 6.0])), 5.0, rtol=1e-12)
+
+
+# A single-sample trace leaves the trailing-window list empty, where Trinity3D is undefined. That sample is the only
+# available reduction, so a trace carrying a real value must not reduce to NaN.
+def test_t3d_median_estimator_single_sample_returns_that_sample() -> None:
+    assert_allclose(scan._t3d_median_estimator(np.array([2.5])), 2.5, rtol=1e-12)
 
 
 # Runtime profile gradients

@@ -260,20 +260,27 @@ def test_stage5_feedback_changes_parameters_and_matches_final_transport(tmp_path
     assert fed["runs"][0]["runtime_species"][1]["nu"] != initial["runs"][0]["runtime_species"][1]["nu"]
 
 
-def test_full_scan_forwards_sources_and_scaling(tmp_path, monkeypatch):
+@pytest.mark.parametrize("reducer", ["window_mean", "t3d_median"])
+def test_full_scan_forwards_sources_scaling_and_reducer(tmp_path, monkeypatch, reducer):
     config = tmp_path / "common.toml"
     config.write_text(fixtures.PRESCRIBED_TOML)
     template = tmp_path / "gkx.toml"
     template.write_text("")
     vmec = write_wout(tmp_path / "wout.nc")
     monkeypatch.setattr(scan, "cmd_run", lambda args: 0)
-    monkeypatch.setattr(scan, "cmd_collect", lambda args: 0)
+
+    def collect(args):
+        assert args.average_reducer == reducer
+        return 0
+
+    monkeypatch.setattr(scan, "cmd_collect", collect)
     args = scan.build_parser().parse_args([
         "--common-config", str(config), "--output-dir", str(tmp_path / "out"),
         "--profiles-source", "prescribed", "--vmec-file-override", str(vmec),
         "--gkx-template", str(template), "--rho-star-physical", "0.01",
         "--beta-source", "profiles", "--collisionality-source", "profiles",
         "--collisionality-scaling-factor", "2.5",
+        "--average-reducer", reducer,
     ])
     assert scan.cmd_all(args) == 0
     manifest = json.loads((tmp_path / "out/manifest.json").read_text())

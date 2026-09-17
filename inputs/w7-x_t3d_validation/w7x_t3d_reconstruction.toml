@@ -1,0 +1,95 @@
+[[species]]
+name = "ion"
+charge = 1.0
+mass = 1.0
+density = 1.0
+temperature = 1.0
+tprim = 3.0
+fprim = 1.0
+nu = 0.01
+kinetic = true
+
+[grid]
+Nx = 64
+Ny = 64
+Nz = 64
+Lx = 94.24777960769379
+Ly = 94.24777960769379
+boundary = "fix aspect"
+y0 = 15.0
+ntheta = 64
+nperiod = 1
+
+[time]
+t_max = 500.0
+dt = 0.1
+method = "rk3"
+use_diffrax = false
+sample_stride = 50
+diagnostics_stride = 50
+fixed_dt = false
+cfl = 0.8
+
+[geometry]
+model = "vmec"
+vmec_file = "../../stage1-equilibrium/output/wout_w7x_t3d_reconstruction.nc"
+geometry_file = "../output/wout_w7x_t3d_reconstruction.eik.nc"
+torflux = 0.64
+alpha = 0.0
+npol = 1.0
+
+[init]
+init_field = "density"
+init_amp = 1e-3
+gaussian_init = false
+init_single = false
+
+[physics]
+linear = false
+nonlinear = true
+electrostatic = true
+electromagnetic = false
+adiabatic_electrons = true
+adiabatic_ions = false
+tau_e = 1.0
+beta = 0.0
+collisions = true
+hypercollisions = true
+
+[collisions]
+nu_hermite = 1.0
+nu_laguerre = 2.0
+nu_hyper = 0.0
+p_hyper = 4.0
+hypercollisions_const = 0.0
+hypercollisions_kz = 1.0
+D_hyper = 0.05
+damp_ends_amp = 0.1
+damp_ends_widthfrac = 0.125
+
+[normalization]
+contract = "kinetic"
+diagnostic_norm = "gx"
+
+[terms]
+streaming = 1.0
+mirror = 1.0
+curvature = 1.0
+gradb = 1.0
+diamagnetic = 1.0
+collisions = 1.0
+hypercollisions = 1.0
+hyperdiffusion = 1.0
+end_damping = 1.0
+apar = 0.0
+bpar = 0.0
+nonlinear = 1.0
+
+[run]
+ky = 0.047619047619047616
+Nl = 4
+Nm = 12
+
+[output]
+# Retains every chunk's full kx/ky/z diagnostic spectra in host RAM until the end-of-run concatenation.
+resolved_diagnostics = true

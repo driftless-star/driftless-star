@@ -7,6 +7,9 @@ The tests check all unit conversions. Density becomes m^-3, temperature becomes 
 in kV/m. Face gradients change from units per metre to units per rho. Text outside [profiles] must
 remain unchanged, except for ``t0`` and ``dt`` in [transport_solver]. These tests do not require
 NEOPAX.
+
+One test feeds an emitted file back through the Snakefile's parse-time [profiles] validation, which
+holds the writer and that validator to the same key set and shapes.
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
+from src.stage5_helper import prepare_neopax_config
 from tests.helpers.stage_import import load_stage_module
 from tests.helpers.synthetic import write_transport_solution
 
@@ -910,3 +914,28 @@ def test_static_solution_with_a_timestamp_records_its_slice_time(
         f.create_dataset("ts", data=np.array([FINAL_TIME]))
     text = _run_writer(monkeypatch, h5_path, TRACKED_TEMPLATE, tmp_path / "out.toml")
     assert "transport time slice t = 4e-07 s" in text
+
+
+# Parse-time validation of the emitted file
+
+# ``prepare_neopax_config`` validates [profiles] while Snakemake parses the workflow, before any
+# stage runs. The emitted file is the next iteration's template. This is the only test holding the
+# emitted key set, ranks and radial lengths to what that validator demands.
+def test_emitted_common_input_passes_the_parse_time_validation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    h5_path = _write_time_resolved(tmp_path / "transport_solution.h5", n_times=3, ts=SAVE_TIMES)
+    emitted = tmp_path / "emitted.toml"
+    text = _run_writer(monkeypatch, h5_path, TRACKED_TEMPLATE, emitted)
+    assert tomllib.loads(text)["profiles"]["model"] == "prescribed"  # the validated branch is the one reached
+
+    out = tmp_path / "out"
+    prepare_neopax_config(
+        s5_config_template=str(emitted),
+        s5_resolved_config=str(out / "stage5_transport" / "common_input_updated.toml"),
+        s1_output=str(out / "stage1_equilibrium" / "wout.nc"),
+        s2_output=str(out / "stage2_boozer" / "boozmn.nc"),
+        s3_output=str(out / "stage3_neoclassical" / "sfincs_flux.h5"),
+        s4_output=str(out / "stage4_turbulence" / "neopax_fluxes.h5"),
+        s5_output_dir=str(out / "stage5_transport"),
+    )

@@ -1472,27 +1472,63 @@ def _time_average_columns(
     *,
     average_window: float,
     t_final_override: float | None,
+    average_reducer: str,
 ) -> tuple[dict[str, float], float, float]:
     if "t" not in columns:
         raise KeyError("Diagnostics CSV must contain a 't' column for time averaging")
     times = np.asarray(columns["t"], dtype=float)
     if times.size == 0:
         raise ValueError("Diagnostics CSV has an empty time axis")
-    t_end_data = float(times[-1])
-    t_end = t_end_data if t_final_override is None else float(t_final_override)
+    reducer = str(average_reducer).strip().lower()
+    if reducer == "t3d_median":
+        t_start = float(times[0])
+        t_end = float(times[-1])
+        return {
+            name: _t3d_median_estimator(np.asarray(values, dtype=float))
+            for name, values in columns.items()
+            if np.asarray(values, dtype=float).ndim == 1
+        }, t_start, t_end
+    t_end = float(times[-1]) if t_final_override is None else float(t_final_override)
     if float(average_window) <= 0.0:
         raise ValueError("--average-window must be > 0")
     t_start = max(float(times[0]), t_end - float(average_window))
     mask = times >= t_start
     if not np.any(mask):
         mask[-1] = True
-    out: dict[str, float] = {}
-    for name, values in columns.items():
-        arr = np.asarray(values, dtype=float)
-        if arr.ndim != 1:
-            continue
-        out[name] = float(np.nanmean(arr[mask]))
-    return out, t_start, t_end
+    return {
+        name: float(np.nanmean(np.asarray(values, dtype=float)[mask]))
+        for name, values in columns.items()
+        if np.asarray(values, dtype=float).ndim == 1
+    }, t_start, t_end
+
+
+def _t3d_median_estimator(values: np.ndarray) -> float:
+    """Reduce a diagnostics time trace to the median of its trailing-window medians.
+
+    The windows cover the last k samples for k = 1 .. N-1, matching Trinity3D's
+    ``GX.median_estimator``, so the oldest sample enters no window. Samples are not screened for
+    finiteness, so a NaN the windows cover propagates to the returned value rather than being
+    dropped, which keeps a failed run visible instead of reporting the median of its surviving
+    samples. Trinity3D leaves a single-sample trace undefined because its window list is empty,
+    and that sample is returned here.
+
+    Parameters
+    ----------
+    values : np.ndarray
+        One diagnostics column as a 1-D time trace, oldest sample first.
+
+    Returns
+    -------
+    float
+        Median of the trailing-window medians, NaN for an empty trace or a NaN inside a window.
+    """
+    trace = np.asarray(values, dtype=float)
+    if trace.size == 0:
+        return math.nan
+    if trace.size == 1:
+        return float(trace[0])
+    trailing_medians = [np.median(trace[::-1][:k]) for k in range(1, trace.size)]
+    return float(np.median(trailing_medians))
 
 
 def _write_summary_plots(
@@ -1739,6 +1775,7 @@ def cmd_collect(args: argparse.Namespace) -> int:
                 columns,
                 average_window=float(args.average_window),
                 t_final_override=requested_t_final,
+                average_reducer=str(getattr(args, "average_reducer", "window_mean")),
             )
         except Exception as exc:
             if int(manifest.get("schema_version", 1)) >= 3 and not allow_incomplete:
@@ -2114,6 +2151,7 @@ def cmd_all(args: argparse.Namespace) -> int:
         out=str(output_dir / "flux_summary.h5"),
         neopax_flux_out=str(output_dir / "neopax_fluxes.h5"),
         average_window=args.average_window,
+        average_reducer=args.average_reducer,
         t_final=args.t_max,
         plot=args.plot,
         plot_run_heat_traces=args.plot_run_heat_traces,
@@ -2260,6 +2298,12 @@ def _add_collect_tuning_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--allow-incomplete", action="store_true",
                         help="Explicitly allow incomplete diagnostic export with zero-filled missing runs.")
     parser.add_argument("--average-window", type=float, default=1.0, help="Average turbulent fluxes over the final time window")
+    parser.add_argument(
+        "--average-reducer",
+        choices=("window_mean", "t3d_median"),
+        default="window_mean",
+        help="Reduction used on the turbulent time trace: final-window mean or Trinity3D-style median estimator.",
+    )
     parser.add_argument("--plot", dest="plot", action="store_true", help="Write PNG plots of Gamma and Q versus rho.")
     parser.add_argument("--no-plot", dest="plot", action="store_false", help="Skip PNG plots.")
     parser.set_defaults(plot=True)

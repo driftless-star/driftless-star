@@ -52,8 +52,9 @@ def _dry_run(
     config_overrides: list[str],
     extra_configfiles: list[str] | None = None,
     printshellcmds: bool = False,
+    configfile: str = "inputs/quick_run/config.yaml",
 ) -> subprocess.CompletedProcess:
-    """Plan the quick_run DAG with ``snakemake -n``, redirecting every write under ``tmp_path``.
+    """Plan a run with ``snakemake -n`` and redirect writes to ``tmp_path``.
 
     ``extra_configfiles`` are appended after the base config file under the same single
     ``--configfile`` flag, exactly as the loop driver passes its overrides file, and
@@ -61,7 +62,7 @@ def _dry_run(
     """
     return subprocess.run(
         ["snakemake", "-n", *(["-p"] if printshellcmds else []), *targets,
-         "--configfile", "inputs/quick_run/config.yaml", *(extra_configfiles or []),
+         "--configfile", configfile, *(extra_configfiles or []),
          "--workflow-profile", "none",
          "--runtime-source-cache-path", f"{tmp_path}/srccache",
          "--config", f"output_dir={tmp_path}/out", *config_overrides],
@@ -241,16 +242,19 @@ def test_perturbed_surface_target_matches_run_one(tmp_path: Path) -> None:
 
 # With a real manifest on disk and its upstream equilibrium and Boozer outputs already present, the stage4_prepare
 # checkpoint is up to date, so a dry run expands its gather and schedules one stage4_run_one per manifest entry,
-# including the perturbed sibling. Write the dummy outputs after the committed inputs and before the manifest,
-# so each dependency is up to date even when the input files were recently edited.
-# Only the manifest basenames matter, so container-absolute run_dir paths work.
+# including the perturbed sibling. Every committed file the DAG consumes lives under inputs/quick_run/ and carries its
+# checkout mtime, so the dummy upstream outputs and the manifest are stamped strictly newer than all of them, in DAG
+# order, keeping every rule up to date however recently the repo was cloned. Only the manifest basenames matter, so
+# container-absolute run_dir paths work.
 def test_perturbed_manifest_expands_fan_out(tmp_path: Path) -> None:
     config = yaml.safe_load((REPO_ROOT / "inputs/quick_run/config.yaml").read_text())
     paths = resolve_pipeline_paths(config, output_dir=f"{tmp_path}/out")
+    newest_input = max(p.stat().st_mtime for p in (REPO_ROOT / paths["input_dir"]).rglob("*") if p.is_file())
     for key in ("s1_output", "s2_output"):
         artifact = Path(paths[key])
         artifact.parent.mkdir(parents=True, exist_ok=True)
         artifact.write_text("")
+        os.utime(artifact, (newest_input + 100, newest_input + 100))
     manifest = Path(paths["stage4_manifest"])
     manifest.parent.mkdir(parents=True, exist_ok=True)
     for surface in ("rho_001_r0p2500", "rho_001_r0p2500_fd_n_D"):
@@ -267,6 +271,7 @@ def test_perturbed_manifest_expands_fan_out(tmp_path: Path) -> None:
             }
         )
     )
+    os.utime(manifest, (newest_input + 200, newest_input + 200))
     result = _dry_run(tmp_path, targets=[paths["s4_output"]], config_overrides=[])
     output = result.stdout + result.stderr
     assert result.returncode == 0, output
