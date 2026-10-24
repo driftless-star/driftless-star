@@ -1,0 +1,77 @@
+# QH settings with DKX current density feedback.
+run_name: qh
+gpu_ids: all
+jobs_per_gpu: 4
+input_dir: inputs/qh
+output_dir: outputs/qh
+filenames:
+  s1_input: vmec_input.{run_name}
+  s1_output: wout_{run_name}.nc
+  s2_output: boozmn_{run_name}.nc
+  s3_config: sfincs_input.{run_name}
+  s3_output: dkx_flux_profiles.h5
+  s4_config: '{run_name}.toml'
+  s4_output: neopax_fluxes.h5
+  s5_config: common_input.toml
+  s5_output: transport_solution.h5
+  s5_signal: converge_status.json
+convergence:
+  method: pointwise
+  pressure_rel_tol: 1.0e-12
+current_density_feedback:
+  enabled: true
+  max_iters: 100
+  rel_tol: 1.0e-7
+  abs_tol: 1.0e-5    # A/m²
+  relaxation: 1.0
+loop:
+  pressure_profile_type: akima_spline
+  rerun:
+    stage1: true
+    stage2: true
+    stage3: true
+    stage4: true
+    stage5: true
+stage3:
+  dkx:
+    profiles_source: prescribed
+    neopax_result: null
+    analytical_n_radii: null
+    ntheta: 5
+    nzeta: 11
+    nxi: 12
+    nx: 4
+    solver_tolerance: 1.0e-06
+    plot: true
+    verbose_workers: true
+    response_mode: fd_gradients
+    perturb_temperature_species: ion
+    dkap_density: 0.5
+    dkap_temperature: 0.5
+    perturb_rel_step: 0.5
+stage4:
+  neopax_radius_relabel: boozer_volume
+  gkx:
+    profiles_source: prescribed
+    neopax_result: null
+    analytical_n_radii: null
+    nx: 64
+    ny: 64
+    ntheta: 64
+    t_max: 1000.0
+    average_window: 100
+    average_reducer: t3d_median
+    sample_stride: 50
+    diagnostics_stride: 1
+    resolved_diagnostics: false
+    response_mode: fd_gradients
+    perturb_temperature_species: ion
+    dkap_density: 0.5
+    dkap_temperature: 0.5
+    perturb_rel_step: 0.5
+    plot: true
+    plot_run_heat_traces: true
+    verbose_workers: true
+    beta_source: fixed
+    collisionality_source: fixed
+    collisionality_scaling_factor: 1.0

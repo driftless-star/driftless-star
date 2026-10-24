@@ -1,0 +1,198 @@
+[general]
+mode = "transport"
+
+[geometry]
+vmec_file = "../../outputs/qa/stage1_equilibrium/wout_qa_landreman_paul_2021.nc"
+boozer_file = "../../outputs/qa/stage2_boozer/boozmn_qa_landreman_paul_2021.nc"
+n_radial = 8
+rho_edge = 1.0
+
+[neoclassical]
+flux_model = "dkx_fluxes_r_file"
+entropy_model = "none"
+neoclassical_file = "../../outputs/qa/stage3_neoclassical/dkx_flux_profiles.h5"
+lagged_response_mode = "fd"
+
+[turbulence]
+flux_model = "fluxes_r_file"
+turbulence_file = "../../outputs/qa/stage4_turbulence/neopax_fluxes.h5"
+lagged_response_mode = "fd"
+
+[classical]
+flux_model = "none"
+
+[energy_grid]
+n_x = 4
+
+[species]
+n_species = 2
+names = ["e", "ion"]
+mass_mp = [0.000544617, 1.0]
+charge_qp = [-1.0, 1.0]
+
+[profiles]
+density_face = [[3.5000000002499998e+19, 3.476084184e+19, 3.4186862245e+19, 3.3230229589999997e+19, 3.189094388e+19, 3.0169005105e+19, 2.735314493e+19, 2.3296341765e+19, 2.03e+19], [3.5000000002499998e+19, 3.476084184e+19, 3.4186862245e+19, 3.3230229589999997e+19, 3.189094388e+19, 3.0169005105e+19, 2.735314493e+19, 2.3296341765e+19, 2.03e+19]]
+density_grad_face = [[0.0, -3.061224479999991e+18, -6.122449039999989e+18, -9.183673440000017e+18, -1.2244897919999963e+19, -1.5306122480000006e+19, -2.9747640320000012e+19, -3.516121031999999e+19, -5.319940453333297e+18], [0.0, -3.061224479999991e+18, -6.122449039999989e+18, -9.183673440000017e+18, -1.2244897919999963e+19, -1.5306122480000006e+19, -2.9747640320000012e+19, -3.516121031999999e+19, -5.319940453333297e+18]]
+temperature_face = [[6696.6253988749995, 6245.0287945, 5233.188432000001, 3786.7594540000005, 2265.6993, 1173.9483855, 765.727113, 655.486111, 560.0], [999.9999997499999, 992.0280610000001, 972.8954080000001, 941.007653, 896.3647960000001, 838.966837, 753.0149875, 639.9851189999999, 560.0]]
+temperature_grad_face = [[0.0, -5780.436535999989, -10409.009264000006, -12733.854384, -11603.108079999998, -5864.906552000001, -666.6338079999994, -1097.2222240000003, -208.33332799999837], [0.0, -102.0408159999997, -204.0816320000003, -306.12244799999996, -408.1632639999997, -510.20408000000026, -865.0255120000007, -943.4523839999987, -133.9285653333331]]
+Er_face = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+model = "prescribed"
+
+# Values are at NEOPAX cell centres:
+# rho = [0.0625, 0.1875, 0.3125, 0.4375,
+#        0.5625, 0.6875, 0.8125, 0.9375]
+#
+# Prescribed density must be in m^-3.
+density = [
+  [
+    3.495216837e19,
+    3.456951531e19,
+    3.380420918e19,
+    3.265625000e19,
+    3.112563776e19,
+    2.921237245e19,
+    2.549391741e19,
+    2.109876612e19
+  ],
+  [
+    3.495216837e19,
+    3.456951531e19,
+    3.380420918e19,
+    3.265625000e19,
+    3.112563776e19,
+    2.921237245e19,
+    2.549391741e19,
+    2.109876612e19
+  ]
+]
+
+# Prescribed temperatures must be in eV.
+# First row: electrons; second row: ions.
+temperature = [
+  [
+    6606.306078,
+    5883.751511,
+    4582.625353,
+    2990.893555,
+    1540.505045,
+    807.391726,
+    724.062500,
+    586.909722
+  ],
+  [
+    998.405612,
+    985.650510,
+    960.140306,
+    921.875000,
+    870.854592,
+    807.079082,
+    698.950893,
+    581.019345
+  ]
+]
+
+Er = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+[boundary.density.left]
+type = "neumann"
+
+[boundary.density.left.gradient]
+default = 0.0
+
+[boundary.density.right]
+type = "dirichlet"
+
+[boundary.density.right.value]
+e = 0.203
+ion = 0.203
+
+[boundary.temperature.left]
+type = "neumann"
+
+[boundary.temperature.left.gradient]
+default = 0.0
+
+[boundary.temperature.right]
+type = "dirichlet"
+
+[boundary.temperature.right.value]
+e = 0.56
+ion = 0.56
+
+[boundary.Er.left]
+type = "dirichlet"
+value = 0.0
+
+[boundary.Er.right]
+type = "dirichlet"
+value = 0.0
+
+[equations]
+toggle_density = [false, false]
+toggle_temperature = [false, true]
+toggle_Er = false
+
+[sources]
+temperature = ["power_exchange_temperature_equilibration"]
+density = []
+
+[sources.parameters.power_exchange_temperature_equilibration]
+mode = "all"
+
+[transport_solver]
+density_floor = 1.0e-3
+temperature_floor = 1.0e-3
+
+# This maps T3D's alpha = 1.0 backward-Euler outer loop.
+transport_solver_backend = "theta_t3d_outer"
+integrator = "theta_t3d_outer"
+theta_implicit = 1.0
+theta_rhs_mode = "lagged_transport_response"
+theta_predictor_mode = "linearized"
+
+# T3D iteration controls copied from W7-X.
+# max_newton_iter = 3
+# newton_threshold = 0.01
+# newton_tolerance = 0.02
+t3d_outer_maxiter = 3
+t3d_outer_rms_threshold = 1.0e-2
+t3d_outer_rms_tolerance = 2.0e-2
+t3d_outer_dt_adjust = 2.0
+t3d_outer_dt_max = 0.3740558
+t3d_outer_dt_increase_threshold = 2.5e-3
+
+nonlinear_solver_tol = 1.0e-7
+
+t0 = 0.0
+t_final = 0.3740558
+dt = 0.00374056
+min_step = 1.0e-14
+max_steps = 20000
+stop_after_accepted_steps = 1
+throw = false
+
+debug_stage_markers = true
+debug_disable_jit = false
+save_n = 2
+
+temperature_include_work_term = true
+temperature_include_neo_convection = true
+temperature_include_turbulent_convection = false
+temperature_include_classical_convection = false
+temperature_convection_reconstruction = "closure_face_flux"
+temperature_heat_flux_reconstruction = "closure_face_flux"
+
+Er_source_mode = "ambipolar_local"
+work_source_mode = "local"
+Er_relax = 0.1
+DEr = 2.0
+Er_permittivity_mode = "ntss_like_midpoint"
+
+[transport_output]
+transport_plot = true
+transport_write_hdf5 = true
+transport_compare_ambipolarity_residual = false
+transport_scan_ambipolarity_residual = false
+transport_overlay_reference_er = false
+transport_output_dir = "../../outputs/qa/stage5_transport/"
+transport_plot_n_times = 2
